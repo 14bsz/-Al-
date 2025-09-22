@@ -16,10 +16,10 @@
       <header class="chat-header">
         <div class="header-left">
           <div class="character-info" @click="showCharacterSelector = true">
-            <img :src="currentCharacter.avatar || 'https://picsum.photos/40/40?random=1'" 
-                 :alt="currentCharacter.name" class="character-avatar">
+            <img :src="currentCharacter?.avatar || 'https://picsum.photos/40/40?random=1'"
+                 :alt="currentCharacter?.name || '角色'" class="character-avatar">
             <div class="character-details">
-              <h3 class="character-name">{{ currentCharacter.name || 'AI助手' }}</h3>
+              <h3 class="character-name">{{ currentCharacter?.name || 'AI助手' }}</h3>
               <span class="character-status">{{ isTyping ? '正在输入...' : '在线' }}</span>
             </div>
             <svg class="dropdown-icon" viewBox="0 0 24 24">
@@ -73,8 +73,8 @@
               <!-- AI消息 -->
               <div v-else class="message ai-message">
                 <div class="message-avatar">
-                  <img :src="currentCharacter.avatar || 'https://picsum.photos/40/40?random=2'" 
-                       :alt="currentCharacter.name">
+                  <img :src="currentCharacter?.avatar || 'https://picsum.photos/40/40?random=2'" 
+                       :alt="currentCharacter?.name || '角色'">
                 </div>
                 <div class="message-content">
                   <div class="message-bubble">
@@ -123,8 +123,8 @@
         <!-- 打字指示器 -->
         <div v-if="isTyping" class="typing-indicator">
           <div class="typing-avatar">
-            <img :src="currentCharacter.avatar || 'https://picsum.photos/40/40?random=2'" 
-                 :alt="currentCharacter.name">
+            <img :src="currentCharacter?.avatar || 'https://picsum.photos/40/40?random=2'" 
+                 :alt="currentCharacter?.name || '角色'">
           </div>
           <div class="typing-animation">
             <div class="dot"></div>
@@ -210,6 +210,23 @@
       </div>
       
       <div class="panel-content">
+        <!-- AI技能面板 -->
+        <!-- <SkillsPanel 
+          :currentCharacter="currentCharacter"
+          @skill-activated="onSkillActivated"
+          @use-example="onUseExample"
+        /> -->
+
+        <!-- 语音聊天面板 -->
+        <!-- <VoiceChatPanel 
+          v-if="voiceMode"
+          :isRecording="isRecording"
+          :audioLevel="audioLevel"
+          @start-recording="startRecording"
+          @stop-recording="stopRecording"
+          @toggle-voice-mode="toggleVoiceMode"
+        /> -->
+
         <!-- 角色切换 -->
         <div class="feature-section">
           <h4>AI角色</h4>
@@ -217,9 +234,9 @@
             <div v-for="character in availableCharacters" :key="character.id"
                  @click="switchCharacter(character)"
                  class="character-card"
-                 :class="{ active: character.id === currentCharacter.id }">
-              <img :src="character.avatar" :alt="character.name">
-              <span>{{ character.name }}</span>
+                 :class="{ active: character?.id === currentCharacter?.id }">
+              <img :src="character?.avatar || 'https://picsum.photos/40/40?random=1'" :alt="character?.name || '角色'">
+              <span>{{ character?.name || '未知角色' }}</span>
             </div>
           </div>
         </div>
@@ -299,40 +316,61 @@
       </div>
     </Teleport>
     <!-- 设置面板 -->
-    <SettingsPanel 
-      v-if="showSettings" 
-      :settings="appSettings"
+    <SettingsPanel
+      :is-open="showSettings"
       @close="showSettings = false"
-      @update-settings="updateSettings"
+      @settings-change="handleSettingsChange"
     />
     
     <!-- 角色选择器 -->
     <CharacterSelector
-      v-if="showCharacterSelector"
-      :current-character="currentCharacter"
+      :is-open="showCharacterSelector"
+      :current-character="currentCharacter as unknown as Character | undefined"
       @close="showCharacterSelector = false"
       @select-character="selectCharacter"
     />
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useChatStore } from '@/stores/chatStore'
 import SettingsPanel from './SettingsPanel.vue'
 import CharacterSelector from './CharacterSelector.vue'
+// import SkillsPanel from './SkillsPanel.vue'
+// import VoiceChatPanel from './VoiceChatPanel.vue'
+
+// 接口定义
+interface Character {
+  id: string
+  name: string
+  description: string
+  avatar: string
+  category: string
+  tags: string[]
+  rating: number
+  usage: number
+  isPremium?: boolean
+  isFavorite?: boolean
+  traits?: Array<{ name: string; value: number }>
+  examples?: Array<{ id: string; role: 'user' | 'assistant'; content: string }>
+  systemPrompt?: string
+}
 
 // 使用聊天store
 const chatStore = useChatStore()
 
 // 响应式数据
-const messagesContainer = ref(null)
-const messageInput = ref(null)
+// DOM引用
+const messagesContainer = ref<HTMLElement | null>(null)
+const messageInput = ref<HTMLTextAreaElement | null>(null)
 
 // 界面状态
 const isDarkMode = ref(false)
 const isVoiceMode = ref(false)
+const voiceMode = ref(false)
 const isRecording = ref(false)
+const audioLevel = ref(0)
 const isLoading = ref(false)
 const sidePanelOpen = ref(false)
 const showQuickActions = ref(false)
@@ -346,12 +384,10 @@ const inputStatus = ref('')
 const uploadProgress = ref(0)
 
 // 从store获取数据
-const messages = computed(() => chatStore.messages)
-const currentCharacter = computed(() => chatStore.currentCharacter)
-const isTyping = computed(() => chatStore.isTyping)
-const isConnected = computed(() => chatStore.isConnected)
-
-// 用户数据
+const messages = computed(() => chatStore.messages)// 计算属性
+const currentCharacter = computed(() => chatStore.selectedCharacter)
+// const isTyping = computed(() => chatStore.isTyping)
+// const isConnected = computed(() => chatStore.isConnected) 用户数据
 const userAvatar = ref('https://picsum.photos/40/40?random=1')
 
 // 情感分析
@@ -397,12 +433,13 @@ const availableCharacters = ref([
 
 // 计算属性
 const canSend = computed(() => {
-  return inputMessage.value.trim().length > 0 && !isTyping.value
+  return inputMessage.value.trim().length > 0 // && !isTyping.value
 })
 
 const inputPlaceholder = computed(() => {
   if (isRecording.value) return '正在录音...'
-  if (isTyping.value) return 'AI正在思考...'
+  // if (isTyping.value) return 'AI正在思考...'
+  if (voiceMode.value) return '点击录音按钮开始语音输入...'
   return '输入消息...'
 })
 
@@ -413,8 +450,9 @@ const sendMessage = async () => {
   const messageText = inputMessage.value.trim()
   if (!messageText) return
   
-  // 通过store发送消息（支持WebSocket）
-  chatStore.sendMessage(messageText, 'text')
+  // 添加用户消息
+  // chatStore.sendMessage(messageText, 'text')
+  chatStore.addMessage(messageText, true)
   
   inputMessage.value = ''
   
@@ -422,29 +460,23 @@ const sendMessage = async () => {
   await nextTick()
   scrollToBottom()
   
-  // 如果未连接WebSocket，模拟AI回复
-  if (!chatStore.isConnected) {
-    chatStore.setTyping(true)
+  // 模拟AI回复（暂时注释WebSocket相关代码）
+  // if (!chatStore.isConnected) {
+    // chatStore.setTyping(true)
     
     setTimeout(() => {
-      chatStore.addMessage({
-        type: 'ai',
-        content: `收到您的消息："${messageText}"。这是一个模拟回复。`,
-        isUser: false,
-        avatar: currentCharacter.value.avatar,
-        model: 'DeepSeek-V2'
-      })
+      chatStore.addMessage(`收到您的消息："${messageText}"。这是一个模拟回复。`, false)
       
-      chatStore.setTyping(false)
+      // chatStore.setTyping(false)
       
       nextTick(() => {
         scrollToBottom()
       })
     }, 1000 + Math.random() * 2000)
-  }
+  // }
 }
 
-const streamText = (message) => {
+const streamText = (message: any) => {
   const fullText = message.content
   let currentIndex = 0
   
@@ -461,18 +493,21 @@ const streamText = (message) => {
   }, 50)
 }
 
-const generateAIResponse = (userMessage) => {
+const generateAIResponse = async (userMessage: string) => {
+  // 模拟AI响应
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  
   const responses = [
-    '这是一个很有趣的问题！让我来为你详细分析一下。',
-    '我理解你的想法，这确实值得深入探讨。',
-    '从多个角度来看，这个话题有很多值得思考的地方。',
-    '你提出了一个很好的观点，我想分享一些相关的见解。',
-    '这让我想到了一些相关的概念，我们可以一起探索。'
+    '这是一个很有趣的问题！',
+    '让我来帮助您解决这个问题。',
+    '我理解您的意思，这里有一些建议...',
+    '根据我的分析，我认为...'
   ]
+  
   return responses[Math.floor(Math.random() * responses.length)]
 }
 
-const handleKeyDown = (event) => {
+const handleKeyDown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     sendMessage()
@@ -482,17 +517,22 @@ const handleKeyDown = (event) => {
 const handleInput = () => {
   // 自动调整输入框高度
   const textarea = messageInput.value
-  textarea.style.height = 'auto'
-  textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px'
-}
-
-const scrollToBottom = () => {
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  if (textarea && textarea instanceof HTMLTextAreaElement) {
+    textarea.style.height = 'auto'
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px'
   }
 }
 
-const formatTime = (timestamp) => {
+const scrollToBottom = () => {
+  nextTick(() => {
+    const container = messagesContainer.value
+    if (container && container instanceof HTMLElement) {
+      container.scrollTop = container.scrollHeight
+    }
+  })
+}
+
+const formatTime = (timestamp: Date | string) => {
   return new Date(timestamp).toLocaleTimeString('zh-CN', {
     hour: '2-digit',
     minute: '2-digit'
@@ -507,6 +547,11 @@ const toggleDarkMode = () => {
 
 const toggleVoiceMode = () => {
   isVoiceMode.value = !isVoiceMode.value
+}
+
+// 设置处理函数
+const handleSettingsChange = (settings: any) => {
+  console.log('设置已更改:', settings)
 }
 
 const toggleQuickActions = () => {
@@ -538,41 +583,42 @@ const closeEmojiPicker = () => {
   showEmojiPicker.value = false
 }
 
-const insertQuickText = (text) => {
+const insertQuickText = (text: string) => {
   inputMessage.value = text
   showQuickActions.value = false
-  messageInput.value?.focus()
+  const input = messageInput.value
+  if (input && input instanceof HTMLTextAreaElement) {
+    input.focus()
+  }
 }
 
-const insertEmoji = (emoji) => {
+const insertEmoji = (emoji: string) => {
   inputMessage.value += emoji
   showEmojiPicker.value = false
-  messageInput.value?.focus()
+  const input = messageInput.value
+  if (input && input instanceof HTMLTextAreaElement) {
+    input.focus()
+  }
 }
 
-const copyMessage = (message) => {
+const copyMessage = (message: any) => {
   navigator.clipboard.writeText(message.content)
   // 显示复制成功提示
 }
 
-const speakMessage = (message) => {
+const speakMessage = (message: any) => {
   // 实现语音播放
   console.log('播放语音:', message.content)
 }
 
-const likeMessage = (message) => {
+const likeMessage = (message: any) => {
   message.liked = !message.liked
 }
 
-const switchCharacter = (character) => {
-  currentCharacter.value = character
-  // 发送系统消息
-  messages.value.push({
-    id: Date.now(),
-    type: 'system',
-    content: `已切换到 ${character.name}`,
-    timestamp: new Date()
-  })
+const switchCharacter = (character: any) => {
+  // currentCharacter.value = character
+  chatStore.selectedCharacter = character
+  chatStore.addMessage(`已切换到 ${character.name}`, false)
 }
 
 const saveSettings = () => {
@@ -607,7 +653,7 @@ const openImageUpload = () => {
   console.log('打开图片上传')
 }
 
-const getEmotionIcon = (emotion) => {
+const getEmotionIcon = (emotion: string) => {
   const icons = {
     joy: '😊',
     sadness: '😢',
@@ -615,11 +661,11 @@ const getEmotionIcon = (emotion) => {
     fear: '😨',
     surprise: '😲'
   }
-  return icons[emotion] || '😐'
+  return icons[emotion as keyof typeof icons] || '😐'
 }
 
 // 设置相关方法
-const updateSettings = (newSettings) => {
+const updateSettings = (newSettings: any) => {
   Object.assign(appSettings.value, newSettings)
   
   // 应用主题
@@ -630,41 +676,120 @@ const updateSettings = (newSettings) => {
   showSettings.value = false
 }
 
-const selectCharacter = (character) => {
-  chatStore.setCurrentCharacter(character)
+const selectCharacter = (character: any) => {
+  // 暂时注释，因为chatStore中没有setCurrentCharacter方法
+  // chatStore.setCurrentCharacter(character)
+  chatStore.selectedCharacter = character
   showCharacterSelector.value = false
   
   // 添加角色切换消息
-  chatStore.addMessage({
-    type: 'system',
-    content: `已切换到 ${character.name}`,
-    isUser: false
-  })
+  chatStore.addMessage(`已切换到 ${character.name}`, false)
+}
+
+// 技能相关方法
+const onSkillActivated = (skillData: any) => {
+  console.log('激活技能:', skillData)
+  
+  const { skill, result } = skillData
+  
+  // 添加技能激活消息
+  chatStore.addMessage(`已激活技能: ${skill.name} - ${skill.description}`, false)
+  
+  // 如果有结果，显示技能执行结果
+  if (result) {
+    let resultMessage = ''
+    
+    if (result.emotion) {
+      resultMessage = `情感分析结果: ${result.emotion} (置信度: ${result.confidence}%)`
+    } else if (result.answer) {
+      resultMessage = `知识问答: ${result.answer}`
+    } else if (result.content) {
+      resultMessage = `创意内容: ${result.content}`
+    }
+    
+    if (resultMessage) {
+      chatStore.addMessage(resultMessage, false)
+    }
+  }
+}
+
+const onUseExample = (exampleData: any) => {
+  console.log('使用示例:', exampleData)
+  
+  const { example, result } = exampleData
+  
+  // 将示例文本填入输入框
+  inputMessage.value = example.text
+  
+  // 如果有AI处理结果，直接显示
+  if (result) {
+    // 添加用户消息
+    chatStore.addMessage(example.text, true)
+    
+    // 添加AI回复
+    let aiResponse = ''
+    if (result.emotion) {
+      aiResponse = `我感受到您的情感是${result.emotion}，置信度${result.confidence}%。${result.suggestion || '让我为您提供一些支持。'}`
+    } else if (result.answer) {
+      aiResponse = result.answer
+    } else if (result.content) {
+      aiResponse = result.content
+    }
+    
+    if (aiResponse) {
+      chatStore.addMessage(aiResponse, false)
+    }
+    
+    // 清空输入框
+    inputMessage.value = ''
+  } else {
+    // 没有结果时自动发送消息
+    setTimeout(() => {
+      sendMessage()
+    }, 100)
+  }
+}
+
+// 语音相关方法
+const startRecording = () => {
+  console.log('开始录音')
+  isRecording.value = true
+  
+  // 这里可以集成实际的语音录制功能
+  // 例如使用 MediaRecorder API
+}
+
+const stopRecording = () => {
+  console.log('停止录音')
+  isRecording.value = false
+  
+  // 这里处理录音结束后的逻辑
+  // 例如发送音频到后端进行语音识别
 }
 
 // 生命周期
 onMounted(async () => {
   loadSettings()
   
-  // 初始化聊天store
-  chatStore.initializeChat()
+  // 初始化聊天
+  // chatStore.initializeChat()
   
-  // 尝试连接WebSocket
-  const connected = await chatStore.connectWebSocket()
-  if (connected) {
-    console.log('WebSocket连接成功')
-    // 可以加入默认房间
-    chatStore.joinRoom('general')
-  } else {
-    console.log('WebSocket连接失败，使用离线模式')
-  }
+  // 尝试连接WebSocket (暂时注释，因为chatStore中没有这些方法)
+  // const connected = await chatStore.connectWebSocket()
+  // if (connected) {
+  //   console.log('WebSocket连接成功')
+  //   // 可以加入默认房间
+  //   chatStore.joinRoom('general')
+  // } else {
+  //   console.log('WebSocket连接失败，使用离线模式')
+  // }
   
-  conversationStats.messageCount = chatStore.messageCount
+  // conversationStats.messageCount = chatStore.messageCount
 })
 
 onUnmounted(() => {
   // 清理资源
-  chatStore.disconnectWebSocket()
+  // chatStore.disconnectWebSocket()
 })
 
 // 监听暗黑模式变化

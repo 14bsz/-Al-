@@ -255,8 +255,8 @@ const stopRecording = async () => {
   const audioBlob = await speechRecognition.stopRecording()
   if (audioBlob) {
     // 如果有语音识别结果，显示给用户确认
-    if (speechRecognition.transcript.trim()) {
-      inputMessage.value = speechRecognition.transcript.trim()
+    if (speechRecognition.transcript.value.trim()) {
+      inputMessage.value = speechRecognition.transcript.value.trim()
       ElMessage.success('语音识别完成，您可以编辑后发送')
     } else {
       // 直接发送语音消息

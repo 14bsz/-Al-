@@ -15,7 +15,7 @@ import java.util.Optional;
  * 提供角色的搜索、管理和CRUD操作的REST API
  */
 @RestController
-@RequestMapping("/api/characters")
+@RequestMapping("/api/v1/characters")
 @CrossOrigin(origins = "*")
 public class CharacterController {
 
