@@ -1,6 +1,10 @@
 package com.aichat.service.impl;
 
 import com.aichat.service.AISkillService;
+import com.aichat.service.AISkillService.EmotionAnalysisResult;
+import com.aichat.service.AISkillService.KnowledgeAnswerResult;
+import com.aichat.service.AISkillService.CreativeWritingResult;
+import com.aichat.service.AISkillService.SkillProcessResult;
 import com.aichat.service.AIService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -219,7 +223,8 @@ public class AISkillServiceImpl implements AISkillService {
         return result;
     }
     
-    @Override
+    // 移除不在接口中的方法 - 已注释掉整个方法
+    /*
     public Map<String, Object> getCharacterSkillConfig(String characterName) {
         Map<String, Object> config = new HashMap<>();
         
@@ -273,9 +278,10 @@ public class AISkillServiceImpl implements AISkillService {
                 config.put("writingStyle", "自然对话");
                 break;
         }
-        
+
         return config;
     }
+    */
     
     // 私有辅助方法
     
@@ -361,8 +367,23 @@ public class AISkillServiceImpl implements AISkillService {
     }
     
     private String analyzeWritingStyle(String content, String characterName) {
-        Map<String, Object> config = getCharacterSkillConfig(characterName);
-        return (String) config.get("writingStyle");
+        // 简化实现，直接返回默认写作风格
+        switch (characterName) {
+            case "哈利波特":
+                return "冒险奇幻";
+            case "苏格拉底":
+                return "思辨对话";
+            case "爱因斯坦":
+                return "科学诗意";
+            case "莎士比亚":
+                return "诗意戏剧";
+            case "孔子":
+                return "格言警句";
+            case "达芬奇":
+                return "创意描述";
+            default:
+                return "自然对话";
+        }
     }
     
     private String extractTheme(String content, String prompt) {

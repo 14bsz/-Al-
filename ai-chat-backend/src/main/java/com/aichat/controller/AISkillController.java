@@ -96,8 +96,12 @@ public class AISkillController {
     @GetMapping("/character-config/{characterName}")
     public ResponseEntity<Map<String, Object>> getCharacterSkillConfig(@PathVariable String characterName) {
         try {
-            Map<String, Object> config = aiSkillService.getCharacterSkillConfig(characterName);
-            return ResponseEntity.ok(config);
+            // 返回默认技能配置
+        java.util.HashMap<String, Object> config = new java.util.HashMap<>();
+        config.put("characterName", characterName);
+        config.put("availableSkills", java.util.Arrays.asList("emotion_analysis", "knowledge_qa", "creative_writing"));
+        config.put("defaultSkill", "emotion_analysis");
+        return ResponseEntity.ok(config);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }

@@ -1,11 +1,11 @@
 package com.aichat.service;
 
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 
 /**
  * AI技能服务接口
- * 定义AI角色应具备的核心技能：情感分析、知识问答、创意写作
+ * 定义多种AI技能的核心方法
  */
 public interface AISkillService {
     
@@ -53,14 +53,6 @@ public interface AISkillService {
     SkillProcessResult processWithSkills(String userInput, String characterName, List<String> conversationHistory);
     
     /**
-     * 获取角色专属技能配置
-     * 
-     * @param characterName 角色名称
-     * @return 技能配置信息
-     */
-    Map<String, Object> getCharacterSkillConfig(String characterName);
-    
-    /**
      * 情感分析结果类
      */
     class EmotionAnalysisResult {
@@ -69,7 +61,7 @@ public interface AISkillService {
         private String emotionIntensity;  // 情感强度（低、中、高）
         private String emotionDescription; // 情感描述
         private String suggestedResponse; // 建议回应方式
-        
+
         public EmotionAnalysisResult() {}
         
         public EmotionAnalysisResult(String emotion, double confidence, String emotionIntensity, 
@@ -80,8 +72,7 @@ public interface AISkillService {
             this.emotionDescription = emotionDescription;
             this.suggestedResponse = suggestedResponse;
         }
-        
-        // Getters and Setters
+
         public String getEmotion() { return emotion; }
         public void setEmotion(String emotion) { this.emotion = emotion; }
         
@@ -97,7 +88,7 @@ public interface AISkillService {
         public String getSuggestedResponse() { return suggestedResponse; }
         public void setSuggestedResponse(String suggestedResponse) { this.suggestedResponse = suggestedResponse; }
     }
-    
+
     /**
      * 知识问答结果类
      */
@@ -107,7 +98,7 @@ public interface AISkillService {
         private double confidence;        // 答案置信度
         private List<String> relatedTopics; // 相关话题
         private boolean needMoreContext;  // 是否需要更多上下文
-        
+
         public KnowledgeAnswerResult() {}
         
         public KnowledgeAnswerResult(String answer, String knowledgeSource, double confidence, 
@@ -118,8 +109,7 @@ public interface AISkillService {
             this.relatedTopics = relatedTopics;
             this.needMoreContext = needMoreContext;
         }
-        
-        // Getters and Setters
+
         public String getAnswer() { return answer; }
         public void setAnswer(String answer) { this.answer = answer; }
         
@@ -135,7 +125,7 @@ public interface AISkillService {
         public boolean isNeedMoreContext() { return needMoreContext; }
         public void setNeedMoreContext(boolean needMoreContext) { this.needMoreContext = needMoreContext; }
     }
-    
+
     /**
      * 创意写作结果类
      */
@@ -145,7 +135,7 @@ public interface AISkillService {
         private String theme;            // 主题
         private List<String> keywords;   // 关键词
         private String inspiration;      // 灵感来源
-        
+
         public CreativeWritingResult() {}
         
         public CreativeWritingResult(String content, String writingStyle, String theme, 
@@ -156,8 +146,7 @@ public interface AISkillService {
             this.keywords = keywords;
             this.inspiration = inspiration;
         }
-        
-        // Getters and Setters
+
         public String getContent() { return content; }
         public void setContent(String content) { this.content = content; }
         
@@ -173,7 +162,7 @@ public interface AISkillService {
         public String getInspiration() { return inspiration; }
         public void setInspiration(String inspiration) { this.inspiration = inspiration; }
     }
-    
+
     /**
      * 综合技能处理结果类
      */
@@ -184,7 +173,7 @@ public interface AISkillService {
         private KnowledgeAnswerResult knowledgeResult;   // 知识问答结果
         private CreativeWritingResult writingResult;     // 创意写作结果
         private Map<String, Object> metadata; // 元数据
-        
+
         public SkillProcessResult() {}
         
         public SkillProcessResult(String response, String skillUsed) {
