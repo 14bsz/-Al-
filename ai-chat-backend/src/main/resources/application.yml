@@ -1,0 +1,94 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-chat-backend
+  
+  # 数据库配置
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+  
+  # JPA配置
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  
+  # H2控制台配置
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  # 文件上传配置
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+# AI服务配置
+ai:
+  providers:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:your-deepseek-api-key}
+      base-url: https://api.deepseek.com
+      model: deepseek-chat
+  features:
+    emotion-analysis: true
+    personality-adaptation: true
+
+# CORS配置
+cors:
+  allowed-origins: "*"
+  allowed-methods: "GET,POST,PUT,DELETE,OPTIONS"
+  allowed-headers: "*"
+  allow-credentials: true
+  max-age: 3600
+
+# 第三方API配置
+api:
+  deepseek:
+    base-url: https://api.deepseek.com
+    key: ${DEEPSEEK_API_KEY:your-deepseek-api-key}
+    model: deepseek-chat
+  openai:
+    base-url: https://api.openai.com
+    key: ${OPENAI_API_KEY:your-openai-api-key}
+    whisper-model: whisper-1
+    tts-model: tts-1
+    tts-voice: alloy
+
+# 日志配置
+logging:
+  level:
+    com.aichat: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+
+---
+# 生产环境配置
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: jdbc:postgresql://localhost:5432/aichat
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:aichat}
+    password: ${DB_PASSWORD:password}
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  h2:
+    console:
+      enabled: false
