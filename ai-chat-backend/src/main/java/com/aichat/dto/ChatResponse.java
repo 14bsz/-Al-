@@ -36,6 +36,24 @@ public class ChatResponse {
     // 使用的token数量
     private Integer tokensUsed;
 
+    // 是否包含音频回复
+    private boolean hasAudio = false;
+
+    // 使用的AI技能列表
+    private java.util.List<String> skillsUsed;
+
+    // 情感状态
+    private String emotionalState;
+
+    // 置信度
+    private Double confidence;
+
+    // 响应时间（毫秒）
+    private Long responseTime;
+
+    // 错误详情
+    private String error;
+
     // 响应状态枚举
     public enum ResponseStatus {
         SUCCESS,    // 成功
@@ -194,6 +212,80 @@ public class ChatResponse {
 
     public void setTokensUsed(Integer tokensUsed) {
         this.tokensUsed = tokensUsed;
+    }
+
+    public boolean isHasAudio() {
+        return hasAudio;
+    }
+
+    public void setHasAudio(boolean hasAudio) {
+        this.hasAudio = hasAudio;
+    }
+
+    public java.util.List<String> getSkillsUsed() {
+        return skillsUsed;
+    }
+
+    public void setSkillsUsed(java.util.List<String> skillsUsed) {
+        this.skillsUsed = skillsUsed;
+    }
+
+    public String getEmotionalState() {
+        return emotionalState;
+    }
+
+    public void setEmotionalState(String emotionalState) {
+        this.emotionalState = emotionalState;
+    }
+
+    public Double getConfidence() {
+        return confidence;
+    }
+
+    public void setConfidence(Double confidence) {
+        this.confidence = confidence;
+    }
+
+    public Long getResponseTime() {
+        return responseTime;
+    }
+
+    public void setResponseTime(Long responseTime) {
+        this.responseTime = responseTime;
+    }
+
+    public String getError() {
+        return error;
+    }
+
+    public void setError(String error) {
+        this.error = error;
+    }
+
+    /**
+     * 添加使用的技能
+     */
+    public void addSkillUsed(String skill) {
+        if (skillsUsed == null) {
+            skillsUsed = new java.util.ArrayList<>();
+        }
+        if (!skillsUsed.contains(skill)) {
+            skillsUsed.add(skill);
+        }
+    }
+
+    /**
+     * 检查响应是否成功
+     */
+    public boolean isSuccess() {
+        return status == ResponseStatus.SUCCESS;
+    }
+
+    /**
+     * 检查是否有错误
+     */
+    public boolean hasError() {
+        return status == ResponseStatus.ERROR || error != null;
     }
 
     @Override

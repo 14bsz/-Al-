@@ -26,6 +26,18 @@ public class ChatRequest {
     // 消息类型（用于WebSocket消息分类）
     private String messageType;
 
+    // 是否需要语音回复
+    private boolean needVoiceResponse = false;
+
+    // AI技能类型
+    private String skillType;
+
+    // 上下文信息
+    private String context;
+
+    // 音频文件路径（用于语音聊天）
+    private String audioPath;
+
     // 无参构造函数
     public ChatRequest() {
     }
@@ -93,6 +105,53 @@ public class ChatRequest {
 
     public void setMessageType(String messageType) {
         this.messageType = messageType;
+    }
+
+    public boolean isNeedVoiceResponse() {
+        return needVoiceResponse;
+    }
+
+    public void setNeedVoiceResponse(boolean needVoiceResponse) {
+        this.needVoiceResponse = needVoiceResponse;
+    }
+
+    public String getSkillType() {
+        return skillType;
+    }
+
+    public void setSkillType(String skillType) {
+        this.skillType = skillType;
+    }
+
+    public String getContext() {
+        return context;
+    }
+
+    public void setContext(String context) {
+        this.context = context;
+    }
+
+    public String getAudioPath() {
+        return audioPath;
+    }
+
+    public void setAudioPath(String audioPath) {
+        this.audioPath = audioPath;
+    }
+
+    /**
+     * 验证请求参数的有效性
+     */
+    public boolean isValid() {
+        return userId != null && characterId != null && 
+               (message != null && !message.trim().isEmpty() || audioPath != null);
+    }
+
+    /**
+     * 是否为语音请求
+     */
+    public boolean isVoiceRequest() {
+        return audioPath != null && !audioPath.trim().isEmpty();
     }
 
     @Override

@@ -2,232 +2,354 @@ package com.aichat.controller;
 
 import com.aichat.dto.ChatRequest;
 import com.aichat.dto.ChatResponse;
+import com.aichat.entity.ChatMessage;
+import com.aichat.entity.ChatSession;
+import com.aichat.repository.ChatMessageRepository;
+import com.aichat.repository.ChatSessionRepository;
+import com.aichat.repository.AICharacterRepository;
 import com.aichat.service.ChatService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.validation.Valid;
-import java.util.HashMap;
-import java.util.Map;
-
-import javax.validation.Valid;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Optional;
 
 /**
  * 聊天控制器
- * 提供文本聊天和语音聊天的REST API端点
+ * 处理聊天相关的HTTP请求
  */
 @RestController
 @RequestMapping("/api/chat")
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = "*")
 public class ChatController {
-
-    private static final Logger logger = LoggerFactory.getLogger(ChatController.class);
 
     @Autowired
     private ChatService chatService;
 
+    @Autowired
+    private ChatSessionRepository sessionRepository;
+
+    @Autowired
+    private ChatMessageRepository messageRepository;
+    
+    @Autowired
+    private AICharacterRepository characterRepository;
+
     /**
      * 处理文本聊天请求
-     * 
-     * @param request 聊天请求对象
-     * @return 聊天响应
      */
     @PostMapping("/text")
-    public ResponseEntity<ChatResponse> processTextChat(@Valid @RequestBody ChatRequest request) {
+    public ResponseEntity<ChatResponse> textChat(@RequestBody ChatRequest request) {
         try {
-            logger.info("收到文本聊天请求，用户ID: {}, 角色ID: {}", 
-                       request.getUserId(), request.getCharacterId());
+            // 验证请求参数
+            if (request.getUserId() == null || request.getCharacterId() == null || 
+                request.getMessage() == null || request.getMessage().trim().isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
 
-            // 处理聊天请求
             ChatResponse response = chatService.processTextChat(request);
-
-            // 根据响应状态返回相应的HTTP状态码
-            HttpStatus status = response.getStatus() == ChatResponse.ResponseStatus.SUCCESS 
-                ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR;
-
-            return ResponseEntity.status(status).body(response);
-
-        } catch (IllegalArgumentException e) {
-            logger.warn("文本聊天请求参数错误", e);
-            ChatResponse errorResponse = ChatResponse.error("请求参数错误: " + e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
-            logger.error("处理文本聊天请求时发生异常", e);
-            ChatResponse errorResponse = ChatResponse.error("服务器内部错误，请稍后重试");
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+            ChatResponse errorResponse = new ChatResponse();
+            errorResponse.setMessage("抱歉，我现在无法回复您的消息，请稍后再试。");
+            errorResponse.setError(e.getMessage());
+            return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
 
     /**
      * 处理语音聊天请求
-     * 
-     * @param audioFile 音频文件
-     * @param userId 用户ID
-     * @param characterId 角色ID
-     * @param sessionId 会话ID
-     * @return 聊天响应
      */
-    @PostMapping(value = "/voice", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ChatResponse> processVoiceChat(
-            @RequestParam("audioFile") MultipartFile audioFile,
+    @PostMapping("/voice")
+    public ResponseEntity<ChatResponse> voiceChat(
+            @RequestParam("audio") MultipartFile audioFile,
             @RequestParam("userId") Long userId,
             @RequestParam("characterId") Long characterId,
-            @RequestParam("sessionId") String sessionId) {
+            @RequestParam(value = "needVoiceResponse", defaultValue = "true") boolean needVoiceResponse) {
         
-        File tempFile = null;
         try {
-            logger.info("收到语音聊天请求，用户ID: {}, 角色ID: {}, 文件大小: {} bytes", 
-                       userId, characterId, audioFile.getSize());
-
-            // 验证音频文件
+            // 验证文件
             if (audioFile.isEmpty()) {
-                ChatResponse errorResponse = ChatResponse.error("音频文件不能为空");
-                return ResponseEntity.badRequest().body(errorResponse);
+                return ResponseEntity.badRequest().build();
             }
 
-            // 验证文件类型
-            String contentType = audioFile.getContentType();
-            if (contentType == null || !isValidAudioType(contentType)) {
-                ChatResponse errorResponse = ChatResponse.error("不支持的音频格式，请上传mp3、wav、m4a等格式的文件");
-                return ResponseEntity.badRequest().body(errorResponse);
-            }
+            // 保存临时音频文件
+            String tempDir = System.getProperty("java.io.tmpdir");
+            String fileName = "audio_" + System.currentTimeMillis() + ".wav";
+            Path tempFile = Paths.get(tempDir, fileName);
+            Files.write(tempFile, audioFile.getBytes());
 
-            // 验证文件大小（限制为10MB）
-            if (audioFile.getSize() > 10 * 1024 * 1024) {
-                ChatResponse errorResponse = ChatResponse.error("音频文件大小不能超过10MB");
-                return ResponseEntity.badRequest().body(errorResponse);
-            }
-
-            // 保存临时文件
-            tempFile = saveTemporaryFile(audioFile);
-
-            // 构建聊天请求对象
+            // 构建请求对象
             ChatRequest request = new ChatRequest();
             request.setUserId(userId);
             request.setCharacterId(characterId);
-            request.setSessionId(sessionId);
-            // 注意：语音聊天的message字段将从音频中提取，这里不设置
+            request.setNeedVoiceResponse(needVoiceResponse);
 
-            // 处理语音聊天请求
-            ChatResponse response = chatService.processVoiceChat(tempFile, request);
+            // 处理语音聊天
+            ChatResponse response = chatService.processVoiceChat(tempFile.toFile(), request);
 
-            // 根据响应状态返回相应的HTTP状态码
-            HttpStatus status = response.getStatus() == ChatResponse.ResponseStatus.SUCCESS 
-                ? HttpStatus.OK : HttpStatus.INTERNAL_SERVER_ERROR;
-
-            return ResponseEntity.status(status).body(response);
-
-        } catch (IllegalArgumentException e) {
-            logger.warn("语音聊天请求参数错误", e);
-            ChatResponse errorResponse = ChatResponse.error("请求参数错误: " + e.getMessage());
-            return ResponseEntity.badRequest().body(errorResponse);
-        } catch (IOException e) {
-            logger.error("处理音频文件时发生IO异常", e);
-            ChatResponse errorResponse = ChatResponse.error("音频文件处理失败");
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        } catch (Exception e) {
-            logger.error("处理语音聊天请求时发生异常", e);
-            ChatResponse errorResponse = ChatResponse.error("服务器内部错误，请稍后重试");
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
-        } finally {
             // 清理临时文件
-            if (tempFile != null && tempFile.exists()) {
-                try {
-                    Files.deleteIfExists(tempFile.toPath());
-                    logger.debug("临时音频文件已删除: {}", tempFile.getAbsolutePath());
-                } catch (IOException e) {
-                    logger.warn("删除临时音频文件失败: {}", tempFile.getAbsolutePath(), e);
-                }
-            }
+            Files.deleteIfExists(tempFile);
+
+            return ResponseEntity.ok(response);
+        } catch (IOException e) {
+            ChatResponse errorResponse = new ChatResponse();
+            errorResponse.setMessage("音频文件处理失败，请重试。");
+            errorResponse.setError(e.getMessage());
+            return ResponseEntity.internalServerError().body(errorResponse);
+        } catch (Exception e) {
+            ChatResponse errorResponse = new ChatResponse();
+            errorResponse.setMessage("语音聊天处理失败，请稍后再试。");
+            errorResponse.setError(e.getMessage());
+            return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
 
     /**
-     * 获取服务健康状态
-     * 
-     * @return 服务状态信息
+     * 获取用户的聊天会话列表
+     */
+    @GetMapping("/sessions/{userId}")
+    public ResponseEntity<List<ChatSession>> getUserSessions(@PathVariable String userId) {
+        try {
+            List<ChatSession> sessions = sessionRepository.findByUserIdOrderByLastActivityDesc(userId);
+            return ResponseEntity.ok(sessions);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 获取特定会话的消息列表
+     */
+    @GetMapping("/sessions/{sessionId}/messages")
+    public ResponseEntity<Page<ChatMessage>> getSessionMessages(
+            @PathVariable Long sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        try {
+            Optional<ChatSession> sessionOpt = sessionRepository.findById(sessionId);
+            if (!sessionOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "createdAt"));
+            Page<ChatMessage> messagesPage = messageRepository.findBySessionOrderByCreatedAtDesc(sessionOpt.get(), pageable);
+            return ResponseEntity.ok(messagesPage);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 获取会话的最新消息
+     */
+    @GetMapping("/sessions/{sessionId}/recent")
+    public ResponseEntity<List<ChatMessage>> getRecentMessages(
+            @PathVariable Long sessionId,
+            @RequestParam(defaultValue = "10") int limit) {
+        try {
+            Optional<ChatSession> sessionOpt = sessionRepository.findById(sessionId);
+            if (!sessionOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "createdAt"));
+            Page<ChatMessage> messagesPage = messageRepository.findBySessionOrderByCreatedAtDesc(sessionOpt.get(), pageable);
+            return ResponseEntity.ok(messagesPage.getContent());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 搜索会话中的消息
+     */
+    @GetMapping("/sessions/{sessionId}/search")
+    public ResponseEntity<List<ChatMessage>> searchMessages(
+            @PathVariable Long sessionId,
+            @RequestParam String keyword) {
+        try {
+            Optional<ChatSession> sessionOpt = sessionRepository.findById(sessionId);
+            if (!sessionOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            List<ChatMessage> messages = messageRepository.searchMessagesByContent(sessionOpt.get().getUserId(), keyword);
+            return ResponseEntity.ok(messages);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 创建新的聊天会话
+     */
+    @PostMapping("/sessions")
+    public ResponseEntity<ChatSession> createSession(
+            @RequestParam String userId,
+            @RequestParam Long characterId) {
+        try {
+            // 获取角色对象
+            Optional<com.aichat.entity.AICharacter> characterOpt = characterRepository.findById(characterId);
+            if (!characterOpt.isPresent()) {
+                return ResponseEntity.badRequest().build();
+            }
+            
+            // 检查是否已存在会话
+            List<ChatSession> existingSessions = sessionRepository.findByUserIdAndCharacterOrderByLastActivityDesc(userId, characterOpt.get());
+            if (!existingSessions.isEmpty()) {
+                return ResponseEntity.ok(existingSessions.get(0));
+            }
+
+            // 创建新会话的逻辑会在第一次发送消息时自动处理
+            // 这里返回一个临时响应
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 删除聊天会话
+     */
+    @DeleteMapping("/sessions/{sessionId}")
+    public ResponseEntity<Void> deleteSession(@PathVariable Long sessionId) {
+        try {
+            Optional<ChatSession> sessionOpt = sessionRepository.findById(sessionId);
+            if (!sessionOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            // 删除会话相关的消息
+            List<ChatMessage> messages = messageRepository.findBySessionOrderByCreatedAtAsc(sessionOpt.get());
+            messageRepository.deleteAll(messages);
+            
+            // 删除会话
+            sessionRepository.deleteById(sessionId);
+            
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 清空会话消息
+     */
+    @DeleteMapping("/sessions/{sessionId}/messages")
+    public ResponseEntity<Void> clearSessionMessages(@PathVariable Long sessionId) {
+        try {
+            Optional<ChatSession> sessionOpt = sessionRepository.findById(sessionId);
+            if (!sessionOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            // 删除会话的所有消息
+            List<ChatMessage> messages = messageRepository.findBySessionOrderByCreatedAtAsc(sessionOpt.get());
+            messageRepository.deleteAll(messages);
+            
+            // 重置会话消息计数
+            ChatSession session = sessionOpt.get();
+            session.setMessageCount(0);
+            sessionRepository.save(session);
+            
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 获取会话统计信息
+     */
+    @GetMapping("/sessions/{sessionId}/statistics")
+    public ResponseEntity<Map<String, Object>> getSessionStatistics(@PathVariable Long sessionId) {
+        try {
+            Optional<ChatSession> sessionOpt = sessionRepository.findById(sessionId);
+            if (!sessionOpt.isPresent()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            ChatSession session = sessionOpt.get();
+            long userMessageCount = messageRepository.findBySessionAndSenderTypeOrderByCreatedAtAsc(
+                session, ChatMessage.SenderType.USER
+            ).size();
+            long aiMessageCount = messageRepository.findBySessionAndSenderTypeOrderByCreatedAtAsc(
+                session, ChatMessage.SenderType.AI_CHARACTER
+            ).size();
+
+            java.util.HashMap<String, Object> statistics = new java.util.HashMap<>();
+            statistics.put("totalMessages", session.getMessageCount());
+            statistics.put("userMessages", userMessageCount);
+            statistics.put("aiMessages", aiMessageCount);
+            statistics.put("createdAt", session.getCreatedAt());
+            statistics.put("lastActiveAt", session.getLastActivity());
+            statistics.put("status", session.getSessionStatus());
+
+            return ResponseEntity.ok(statistics);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 获取对话历史
+     */
+    @GetMapping("/history")
+    public ResponseEntity<String> getConversationHistory(
+            @RequestParam Long userId,
+            @RequestParam Long characterId,
+            @RequestParam(defaultValue = "10") int limit) {
+        try {
+            String history = chatService.getConversationHistory(userId, characterId, limit);
+            return ResponseEntity.ok(history);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 检查服务可用性
      */
     @GetMapping("/health")
-    public ResponseEntity<Map<String, Object>> getHealthStatus() {
+    public ResponseEntity<Map<String, Object>> checkHealth() {
         try {
             boolean isAvailable = chatService.isServiceAvailable();
-            
-            Map<String, Object> status = new HashMap<>();
-            status.put("status", isAvailable ? "UP" : "DOWN");
-            status.put("timestamp", System.currentTimeMillis());
-            status.put("service", "AI Chat Service");
-
-            HttpStatus httpStatus = isAvailable ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
-            return ResponseEntity.status(httpStatus).body(status);
-
+            java.util.HashMap<String, Object> health = new java.util.HashMap<>();
+            health.put("status", isAvailable ? "UP" : "DOWN");
+            health.put("timestamp", System.currentTimeMillis());
+            return ResponseEntity.ok(health);
         } catch (Exception e) {
-            logger.error("检查服务健康状态时发生异常", e);
-            Map<String, Object> status = new HashMap<>();
-            status.put("status", "DOWN");
-            status.put("timestamp", System.currentTimeMillis());
-            status.put("service", "AI Chat Service");
-            status.put("error", e.getMessage());
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(status);
+            java.util.HashMap<String, Object> health = new java.util.HashMap<>();
+            health.put("status", "DOWN");
+            health.put("error", e.getMessage());
+            health.put("timestamp", System.currentTimeMillis());
+             return ResponseEntity.internalServerError().body(health);
         }
     }
 
     /**
-     * 验证音频文件类型
+     * 获取角色的系统提示词
      */
-    private boolean isValidAudioType(String contentType) {
-        return contentType.startsWith("audio/") || 
-               contentType.equals("application/octet-stream"); // 某些客户端可能发送这个类型
-    }
-
-    /**
-     * 保存临时音频文件
-     */
-    private File saveTemporaryFile(MultipartFile audioFile) throws IOException {
-        // 获取文件扩展名
-        String originalFilename = audioFile.getOriginalFilename();
-        String extension = "";
-        if (originalFilename != null && originalFilename.contains(".")) {
-            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-        } else {
-            // 根据Content-Type推断扩展名
-            String contentType = audioFile.getContentType();
-            if (contentType != null) {
-                if (contentType.contains("mp3")) {
-                    extension = ".mp3";
-                } else if (contentType.contains("wav")) {
-                    extension = ".wav";
-                } else if (contentType.contains("m4a")) {
-                    extension = ".m4a";
-                } else {
-                    extension = ".tmp";
-                }
-            }
+    @GetMapping("/characters/{characterId}/prompt")
+    public ResponseEntity<String> getCharacterPrompt(@PathVariable Long characterId) {
+        try {
+            String prompt = chatService.getCharacterSystemPrompt(characterId);
+            return ResponseEntity.ok(prompt);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
         }
-
-        // 创建临时文件
-        String tempFileName = "voice_" + UUID.randomUUID().toString() + extension;
-        Path tempDir = Paths.get(System.getProperty("java.io.tmpdir"));
-        Path tempFilePath = tempDir.resolve(tempFileName);
-
-        // 写入文件内容
-        Files.write(tempFilePath, audioFile.getBytes());
-
-        File tempFile = tempFilePath.toFile();
-        logger.debug("临时音频文件已创建: {}", tempFile.getAbsolutePath());
-
-        return tempFile;
     }
 }
