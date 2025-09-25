@@ -24,9 +24,15 @@
         <input 
           type="text" 
           v-model="searchQuery" 
-          placeholder="搜索角色..."
+          placeholder="搜索角色名称、技能或描述..."
           class="search-input"
+          @input="handleSearch"
         />
+        <button v-if="searchQuery" @click="clearSearch" class="clear-search">
+          <svg viewBox="0 0 24 24">
+            <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+          </svg>
+        </button>
       </div>
       
       <div class="filter-tabs">
@@ -36,11 +42,21 @@
           :class="['filter-tab', { 'active': activeCategory === category.id }]"
           @click="setActiveCategory(category.id)"
         >
-          <svg class="tab-icon" viewBox="0 0 24 24">
-            <path :d="category.icon"/>
-          </svg>
+          <span class="tab-emoji">{{ category.emoji }}</span>
           {{ category.name }}
+          <span class="tab-count">({{ getCategoryCount(category.id) }})</span>
         </button>
+      </div>
+
+      <!-- 排序选项 -->
+      <div class="sort-options">
+        <label class="sort-label">排序:</label>
+        <select v-model="sortBy" @change="handleSort" class="sort-select">
+          <option value="popularity">人气</option>
+          <option value="rating">评分</option>
+          <option value="name">名称</option>
+          <option value="recent">最近使用</option>
+        </select>
       </div>
     </div>
 
@@ -139,27 +155,27 @@
     </div>
 
     <!-- 角色预览模态框 -->
-    <div v-if="previewCharacter" class="preview-modal" @click="closePreview">
+    <div v-if="previewCharacterData" class="preview-modal" @click="closePreview">
       <div class="preview-content" @click.stop>
         <div class="preview-header">
           <div class="preview-avatar">
-            <img :src="previewCharacter.avatar" :alt="previewCharacter.name" />
+            <img :src="previewCharacterData.avatar" :alt="previewCharacterData.name" />
           </div>
           <div class="preview-info">
-            <h3>{{ previewCharacter.name }}</h3>
-            <p>{{ previewCharacter.description }}</p>
+            <h3>{{ previewCharacterData.name }}</h3>
+            <p>{{ previewCharacterData.description }}</p>
             <div class="preview-stats">
               <div class="stat">
                 <span class="label">评分:</span>
-                <span class="value">{{ previewCharacter.rating }}/5</span>
+                <span class="value">{{ previewCharacterData.rating }}/5</span>
               </div>
               <div class="stat">
                 <span class="label">使用量:</span>
-                <span class="value">{{ previewCharacter.usage }}k</span>
+                <span class="value">{{ previewCharacterData.usage }}k</span>
               </div>
               <div class="stat">
                 <span class="label">类型:</span>
-                <span class="value">{{ previewCharacter.category }}</span>
+                <span class="value">{{ previewCharacterData.category }}</span>
               </div>
             </div>
           </div>
@@ -174,7 +190,7 @@
           <div class="preview-section">
             <h4>角色特点</h4>
             <div class="character-traits">
-              <div v-for="trait in previewCharacter.traits" :key="trait.name" class="trait">
+              <div v-for="trait in previewCharacterData.traits" :key="trait.name" class="trait">
                 <div class="trait-name">{{ trait.name }}</div>
                 <div class="trait-bar">
                   <div class="trait-fill" :style="{ width: trait.value + '%' }"></div>
@@ -187,9 +203,9 @@
           <div class="preview-section">
             <h4>示例对话</h4>
             <div class="example-chat">
-              <div v-for="message in previewCharacter.examples" :key="message.id" class="example-message">
+              <div v-for="message in previewCharacterData.examples" :key="message.id" class="example-message">
                 <div class="message-avatar">
-                  <img v-if="message.role === 'assistant'" :src="previewCharacter.avatar" :alt="previewCharacter.name" />
+                  <img v-if="message.role === 'assistant'" :src="previewCharacterData.avatar" :alt="previewCharacterData.name" />
                   <div v-else class="user-avatar">U</div>
                 </div>
                 <div class="message-content">{{ message.content }}</div>
@@ -199,7 +215,7 @@
           
           <div class="preview-actions">
             <button class="action-btn secondary" @click="closePreview">取消</button>
-            <button class="action-btn primary" @click="selectCharacter(previewCharacter)">选择角色</button>
+            <button class="action-btn primary" @click="selectCharacter(previewCharacterData!)">选择角色</button>
           </div>
         </div>
       </div>
@@ -306,6 +322,7 @@ interface Category {
   id: string
   name: string
   icon: string
+  emoji: string
 }
 
 // Props
@@ -329,6 +346,7 @@ const selectedCharacterId = ref('')
 const previewCharacterData = ref<Character | null>(null)
 const showCreateDialog = ref(false)
 const tagInput = ref('')
+const sortBy = ref('rating')
 
 // 新角色数据
 const newCharacter = ref<Partial<Character>>({
@@ -344,32 +362,38 @@ const categories: Category[] = [
   {
     id: 'all',
     name: '全部',
-    icon: 'M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2Z'
+    icon: 'M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2Z',
+    emoji: '🌟'
   },
   {
     id: 'assistant',
     name: '助手',
-    icon: 'M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2Z'
+    icon: 'M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2Z',
+    emoji: '🤖'
   },
   {
     id: 'creative',
     name: '创意',
-    icon: 'M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21V20H15V21A1,1 0 0,1 14,22H10A1,1 0 0,1 9,21Z'
+    icon: 'M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21V20H15V21A1,1 0 0,1 14,22H10A1,1 0 0,1 9,21Z',
+    emoji: '🎨'
   },
   {
     id: 'professional',
     name: '专业',
-    icon: 'M12,3L1,9L12,15L21,10.09V17H23V9M5,13.18V17.18L12,21L19,17.18V13.18L12,17L5,13.18Z'
+    icon: 'M12,3L1,9L12,15L21,10.09V17H23V9M5,13.18V17.18L12,21L19,17.18V13.18L12,17L5,13.18Z',
+    emoji: '💼'
   },
   {
     id: 'entertainment',
     name: '娱乐',
-    icon: 'M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6Z'
+    icon: 'M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6Z',
+    emoji: '🎮'
   },
   {
     id: 'custom',
     name: '自定义',
-    icon: 'M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z'
+    icon: 'M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.22,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.22,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.68 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z',
+    emoji: '⚙️'
   }
 ]
 
@@ -637,6 +661,29 @@ const showNotification = (message: string, type: 'success' | 'error' | 'info' = 
   setTimeout(() => {
     notification.remove()
   }, 3000)
+}
+
+// 获取分类角色数量
+const getCategoryCount = (categoryId: string) => {
+  if (categoryId === 'all') {
+    return filteredCharacters.value.length
+  }
+  return filteredCharacters.value.filter(char => char.category === categoryId).length
+}
+
+// 处理排序
+const handleSort = () => {
+  // 排序逻辑已在computed中实现
+}
+
+// 处理搜索
+const handleSearch = () => {
+  // 搜索逻辑已在computed中实现
+}
+
+// 清除搜索
+const clearSearch = () => {
+  searchQuery.value = ''
 }
 
 // 生命周期
